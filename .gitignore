@@ -1,0 +1,7 @@
+# Local work logs and scratch documents (kept out of the repository)
+/Docs/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
