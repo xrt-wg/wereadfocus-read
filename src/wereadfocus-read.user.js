@@ -22,7 +22,7 @@
 /*
  * WeReadFocus · Read —— 增强微信读书网页版阅读体验。
  *
- * 基于 Dio.Ye 的 WeRead+（MIT License）二次开发。
+ * 基于 Dio.Ye 的 WeRead+（https://greasyfork.org/zh-CN/scripts/591915-weread，MIT License）二次开发。
  *
  * Copyright (c) Dio.Ye
  * Copyright (c) 2026 Kaven
