@@ -1,0 +1,6 @@
+# 自动识别文本文件并统一换行符，仓库内统一使用 LF
+* text=auto eol=lf
+
+# Windows 批处理脚本必须保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
