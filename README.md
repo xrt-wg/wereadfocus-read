@@ -32,7 +32,7 @@
 
 ## 来源与版权
 
-本脚本基于 Dio.Ye 的 [WeRead+](https://github.com/diov)（MIT License）二次开发，在其基础上新增了窄栏阅读、双栏自动暂停等能力。
+本脚本基于 Dio.Ye 的 [WeRead+](https://greasyfork.org/zh-CN/scripts/591915-weread)（MIT License）二次开发，在其基础上新增了窄栏阅读、双栏自动暂停等能力。
 
 [MIT](LICENSE) · Copyright (c) Dio.Ye · Copyright (c) 2026 Kaven
 
