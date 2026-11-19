@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         WeRead+
-// @namespace    https://github.com/diov
-// @version      0.2.8
+// @name         WeReadFocus · Read
+// @namespace    https://github.com/xrt-wg/wereadfocus-read
+// @version      0.2.9
 // @description  Enhances the WeRead web reading experience.
 // @description:zh-CN 增强微信读书网页版的阅读体验。
-// @author       Dio.Ye
+// @author       Kaven
 // @license      MIT
 // @compatible   chrome
 // @compatible   firefox
@@ -14,9 +14,20 @@
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @downloadURL https://update.greasyfork.org/scripts/591915/WeRead%2B.user.js
-// @updateURL https://update.greasyfork.org/scripts/591915/WeRead%2B.meta.js
+// @homepageURL  https://github.com/xrt-wg/wereadfocus-read
+// @downloadURL  https://raw.githubusercontent.com/xrt-wg/wereadfocus-read/release/src/wereadfocus-read.user.js
+// @updateURL    https://raw.githubusercontent.com/xrt-wg/wereadfocus-read/release/src/wereadfocus-read.user.js
 // ==/UserScript==
+
+/*
+ * WeReadFocus · Read —— 增强微信读书网页版阅读体验。
+ *
+ * 基于 Dio.Ye 的 WeRead+（MIT License）二次开发。
+ *
+ * Copyright (c) Dio.Ye
+ * Copyright (c) 2026 Kaven
+ * License: MIT
+ */
 
 (function () {
     'use strict';
@@ -30,14 +41,29 @@
     const STORAGE = {
         immersive: 'wrx-immersive-v1',
         shortcuts: 'wrx-shortcuts-v1',
+        narrow: 'wrx-narrow-v1',
+        measure: 'wrx-measure-v1',
         settingsVersion: 'wrx-settings-version',
     };
+
+    const MEASURE_MIN = 25;
+    const MEASURE_MAX = 40;
+    const MEASURE_DEFAULT = 38;
 
     const state = {
         immersive: readImmersive(),
         shortcuts: Boolean(GM_getValue(STORAGE.shortcuts, false)),
+        narrow: Boolean(GM_getValue(STORAGE.narrow, false)),
+        measure: readMeasure(),
+        dualPage: false,
+        dualPageTimer: 0,
+        measurePx: 0,
+        effectiveChars: 0,
+        measureLimited: false,
+        fontPx: 0,
         panelOpen: false,
         notice: '',
+        action: '',
         syncTimer: 0,
         observedBody: null,
         reader: null,
@@ -90,6 +116,26 @@
             width: calc(100% - clamp(48px, 8vw, 112px)) !important;
             height: calc(100% - 48px) !important;
             margin: 24px clamp(24px, 4vw, 56px) 0 !important;
+        }
+
+        /* Narrow measure: one centered column with a comfortable line length.
+           Horizontal padding keeps the text off the page edge; applyMeasureWidth
+           reads this padding, so the measure width stays consistent automatically. */
+        body.wrx-narrow .readerChapterContent {
+            box-sizing: border-box !important;
+            width: var(--wrx-measure-px, 760px) !important;
+            max-width: 100% !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            padding: 0 36px !important;
+        }
+
+        /* The reading "page" (background shell) must follow the same measure. */
+        body.wrx-narrow .app_content {
+            width: var(--wrx-measure-px, 760px) !important;
+            max-width: var(--wrx-measure-px, 760px) !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
         }
 
         /* Keep WeRead controls in their original DOM tree. */
@@ -460,12 +506,101 @@
             transform: translateX(17px);
         }
 
+        .wrx-switch input:disabled + .wrx-switch-track {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
         .wrx-note {
             margin: 11px 0 0;
         }
 
         .wrx-note.wrx-warning {
             color: #d97706 !important;
+        }
+
+        .wrx-note-block {
+            display: grid;
+            gap: 6px;
+        }
+
+        .wrx-note-block[hidden] {
+            display: none !important;
+        }
+
+        .wrx-note-block .wrx-note {
+            margin-top: 11px;
+        }
+
+        .wrx-note-action {
+            justify-self: start;
+            margin: 0;
+            padding: 4px 10px;
+            border: 1px solid rgba(128, 128, 128, 0.3);
+            border-radius: 7px;
+            color: inherit;
+            background: transparent;
+            font: inherit;
+            font-size: 11px;
+            line-height: 17px;
+            cursor: pointer;
+        }
+
+        .wrx-note-action[hidden] {
+            display: none !important;
+        }
+
+        .wrx-note-action:hover {
+            background: rgba(128, 128, 128, 0.12);
+        }
+
+        .wrx-note-action:focus-visible {
+            outline: 2px solid #4a86e8;
+            outline-offset: 1px;
+        }
+
+        .wrx-range-row {
+            display: grid;
+            gap: 6px;
+        }
+
+        .wrx-range-row[hidden] {
+            display: none !important;
+        }
+
+        .wrx-range-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .wrx-range-value {
+            color: #979ca5;
+            font-size: 11px;
+            line-height: 17px;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        body.wr_whiteTheme .wrx-range-value {
+            color: #737e8d;
+        }
+
+        .wrx-range {
+            width: 100%;
+            accent-color: #4a86e8;
+            cursor: pointer;
+        }
+
+        .wrx-range:focus-visible {
+            outline: 2px solid #4a86e8;
+            outline-offset: 2px;
+        }
+
+        .wrx-range:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
         @media (max-width: 760px) {
@@ -487,6 +622,18 @@
         return Boolean(GM_getValue(STORAGE.immersive, true));
     }
 
+    function clampMeasure(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) {
+            return MEASURE_DEFAULT;
+        }
+        return Math.min(MEASURE_MAX, Math.max(MEASURE_MIN, Math.round(number)));
+    }
+
+    function readMeasure() {
+        return clampMeasure(GM_getValue(STORAGE.measure, MEASURE_DEFAULT));
+    }
+
     function applyBodyClasses() {
         if (!document.body) {
             return;
@@ -495,6 +642,7 @@
         document.body.classList.add('wrx-mounted');
         document.body.classList.toggle('wrx-panel-open', state.panelOpen);
         document.body.classList.toggle('wrx-immersive', state.immersive);
+        document.body.classList.toggle('wrx-narrow', state.narrow && !state.dualPage);
     }
 
     function scheduleSync() {
@@ -513,12 +661,12 @@
         }
 
         observeBody();
-        applyBodyClasses();
         mountInterface();
         mountProgress();
         connectProgress();
-        renderInterface();
         syncReaderLayout();
+        applyBodyClasses();
+        renderInterface();
     }
 
     function observeBody() {
@@ -596,7 +744,28 @@
                             <span class="wrx-switch-track"></span>
                         </span>
                     </label>
-                    <p class="wrx-note" hidden></p>
+                    <label class="wrx-switch-row">
+                        <span class="wrx-switch-copy">
+                            <span class="wrx-switch-label">窄栏阅读</span>
+                            <span class="wrx-switch-help">单栏下收窄正文并居中，接近纸质书行宽</span>
+                        </span>
+                        <span class="wrx-switch">
+                            <input type="checkbox" data-narrow>
+                            <span class="wrx-switch-track"></span>
+                        </span>
+                    </label>
+                    <div class="wrx-range-row" data-measure-row hidden>
+                        <div class="wrx-range-head">
+                            <span class="wrx-switch-label">每行字数</span>
+                            <span class="wrx-range-value" data-measure-value>38 字</span>
+                        </div>
+                        <input class="wrx-range" type="range" min="25" max="40" step="1"
+                            value="38" aria-label="每行字数" data-measure>
+                    </div>
+                    <div class="wrx-note-block" hidden>
+                        <p class="wrx-note" hidden></p>
+                        <button class="wrx-note-action" type="button" hidden>刷新页面</button>
+                    </div>
                 </div>
             `;
 
@@ -605,6 +774,15 @@
             });
             panel.querySelector('[data-shortcuts]').addEventListener('change', (event) => {
                 setShortcuts(event.target.checked);
+            });
+            panel.querySelector('[data-narrow]').addEventListener('change', (event) => {
+                setNarrow(event.target.checked);
+            });
+            panel.querySelector('[data-measure]').addEventListener('input', (event) => {
+                setMeasure(event.target.value);
+            });
+            panel.querySelector('.wrx-note-action').addEventListener('click', () => {
+                window.location.reload();
             });
             panel.querySelector('.wrx-fullscreen-btn').addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -681,6 +859,12 @@
         bar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
     }
 
+    function setTextContent(element, text) {
+        if (element.textContent !== text) {
+            element.textContent = text;
+        }
+    }
+
     function renderInterface() {
         const control = document.querySelector(`#${ID.control} button`);
         const panel = document.getElementById(ID.panel);
@@ -692,11 +876,37 @@
         panel.hidden = !state.panelOpen;
         panel.querySelector('[data-immersive]').checked = state.immersive;
         panel.querySelector('[data-shortcuts]').checked = state.shortcuts;
+        panel.querySelector('[data-narrow]').checked = state.narrow;
+        panel.querySelector('[data-narrow]').disabled = state.dualPage;
+
+        const measureRow = panel.querySelector('[data-measure-row]');
+        measureRow.hidden = !state.narrow;
+        const measureInput = panel.querySelector('[data-measure]');
+        measureInput.value = String(state.measure);
+        measureInput.disabled = state.dualPage;
+        const measureValue = panel.querySelector('[data-measure-value]');
+        if (state.narrow && state.effectiveChars > 0 && state.measureLimited) {
+            setTextContent(measureValue, `约 ${state.effectiveChars} 字（窗口限制）`);
+        } else {
+            setTextContent(measureValue, `${state.measure} 字`);
+        }
+
+        const dualNotice = state.dualPage
+            ? (state.narrow
+                ? '双栏模式下已暂停窄栏阅读，切回单栏后自动恢复。'
+                : '窄栏阅读仅在单栏模式下可用。')
+            : '';
+        const notice = state.notice || dualNotice;
 
         const note = panel.querySelector('.wrx-note');
-        note.textContent = state.notice;
-        note.hidden = !state.notice;
-        note.classList.toggle('wrx-warning', Boolean(state.notice));
+        setTextContent(note, notice);
+        note.hidden = !notice;
+        note.classList.toggle('wrx-warning', Boolean(notice));
+
+        const action = panel.querySelector('.wrx-note-action');
+        const showAction = state.action === 'reload';
+        action.hidden = !showAction;
+        panel.querySelector('.wrx-note-block').hidden = !notice && !showAction;
 
         if (state.panelOpen) {
             requestAnimationFrame(positionNativeDocks);
@@ -715,16 +925,41 @@
     function setImmersive(enabled, notice = '') {
         state.immersive = enabled;
         state.notice = notice;
+        state.action = '';
         state.layoutKey = '';
         GM_setValue(STORAGE.immersive, enabled);
         applyBodyClasses();
-        renderInterface();
         syncReaderLayout();
+        renderInterface();
     }
 
     function setShortcuts(enabled) {
         state.shortcuts = enabled;
         GM_setValue(STORAGE.shortcuts, enabled);
+        renderInterface();
+    }
+
+    function setNarrow(enabled) {
+        state.narrow = enabled;
+        state.notice = '';
+        state.action = '';
+        state.layoutKey = '';
+        GM_setValue(STORAGE.narrow, enabled);
+        applyBodyClasses();
+        syncReaderLayout();
+        renderInterface();
+    }
+
+    function setMeasure(value) {
+        const measure = clampMeasure(value);
+        if (measure !== state.measure) {
+            state.measure = measure;
+            state.notice = '';
+            state.action = '';
+            state.layoutKey = '';
+            GM_setValue(STORAGE.measure, measure);
+        }
+        syncReaderLayout();
         renderInterface();
     }
 
@@ -757,6 +992,7 @@
         const request = root.requestFullscreen || root.webkitRequestFullscreen;
         if (!request) {
             state.notice = '当前浏览器不支持全屏模式。';
+            state.action = '';
             renderInterface();
             return;
         }
@@ -764,6 +1000,7 @@
         if (promise && typeof promise.catch === 'function') {
             promise.catch(() => {
                 state.notice = '全屏请求被浏览器拒绝。';
+                state.action = '';
                 renderInterface();
             });
         }
@@ -828,6 +1065,95 @@
         });
     }
 
+    /* WeRead's double-page (双栏) layout is identified by its dedicated container
+       classes, which are stable and independent of canvas geometry or viewport width. */
+    function isDualPageLayout() {
+        return Boolean(
+            document.querySelector('.wr_horizontalReader')
+            || document.querySelector('.readerChapterContent_container'),
+        );
+    }
+
+    function updateDualPage() {
+        const observed = isDualPageLayout();
+        if (observed === state.dualPage) {
+            if (state.dualPageTimer) {
+                clearTimeout(state.dualPageTimer);
+                state.dualPageTimer = 0;
+            }
+            return;
+        }
+
+        if (state.dualPageTimer) {
+            return;
+        }
+
+        state.dualPageTimer = setTimeout(() => {
+            state.dualPageTimer = 0;
+            const next = isDualPageLayout();
+            if (next !== state.dualPage) {
+                state.dualPage = next;
+                state.layoutKey = '';
+                syncReaderLayout();
+                applyBodyClasses();
+                renderInterface();
+            }
+        }, 120);
+    }
+
+    function readFontPx(reader) {
+        const candidates = [reader, reader?.querySelector('.wr_canvasContainer')];
+        for (const element of candidates) {
+            if (!element) {
+                continue;
+            }
+            const size = parseFloat(getComputedStyle(element).fontSize);
+            if (Number.isFinite(size) && size > 0) {
+                return size;
+            }
+        }
+
+        /* Fallback when the rendered size is unavailable: WeRead's 1-7 levels. */
+        const match = (document.body?.className || '').match(/wr_reader_font_size_level_(\d+)/);
+        const level = match ? Number(match[1]) : 4;
+        return 16 + level * 2;
+    }
+
+    function applyMeasureWidth(reader) {
+        if (!state.narrow || state.dualPage) {
+            state.fontPx = 0;
+            state.measurePx = 0;
+            state.effectiveChars = 0;
+            state.measureLimited = false;
+            document.body.style.removeProperty('--wrx-measure-px');
+            return;
+        }
+
+        const style = getComputedStyle(reader);
+        const fontPx = readFontPx(reader);
+        const spacing = parseFloat(style.letterSpacing);
+        const letterSpacing = Number.isFinite(spacing) ? spacing : 0;
+        const padding = (parseFloat(style.paddingLeft) || 0)
+            + (parseFloat(style.paddingRight) || 0);
+        const advance = Math.max(1, fontPx + letterSpacing);
+        const desired = state.measure * advance + padding;
+        /* Stable reference: the reading area, never a descendant of the element we
+           shrink. This breaks the feedback loop that collapsed the width to 160px. */
+        const area = document.querySelector('.readerContent');
+        const areaWidth = area && area.clientWidth > 0 ? area.clientWidth : window.innerWidth;
+        const available = Math.max(160, areaWidth - 8);
+        const width = Math.round(Math.min(desired, available));
+
+        state.fontPx = fontPx;
+        state.measurePx = width;
+        state.measureLimited = width + 0.5 < desired;
+        state.effectiveChars = Math.max(0, Math.floor((width - padding) / advance));
+        const value = `${width}px`;
+        if (document.body.style.getPropertyValue('--wrx-measure-px') !== value) {
+            document.body.style.setProperty('--wrx-measure-px', value);
+        }
+    }
+
     /* Reflow exactly once for each reader node, mode and viewport size. */
     function syncReaderLayout() {
         const reader = document.querySelector('.readerChapterContent');
@@ -842,7 +1168,23 @@
             readerResizeObserver.observe(reader);
         }
 
-        const key = `${state.immersive}:${window.innerWidth}x${window.innerHeight}`;
+        updateDualPage();
+
+        applyMeasureWidth(reader);
+        if (document.body) {
+            document.body.classList.toggle('wrx-narrow', state.narrow && !state.dualPage);
+        }
+
+        const key = [
+            state.immersive ? 'i' : '-',
+            state.narrow ? 'n' : '-',
+            state.dualPage ? 'd' : '-',
+            state.measure,
+            state.fontPx,
+            state.measurePx,
+            `${window.innerWidth}x${window.innerHeight}`,
+        ].join(':');
+
         if (key === state.layoutKey) {
             return;
         }
@@ -872,13 +1214,23 @@
 
     function armLoadingWatchdog() {
         clearTimeout(state.loadingTimer);
-        if (!state.immersive) {
+        const watchingNarrow = state.narrow && !state.dualPage;
+        if (!state.immersive && !watchingNarrow) {
             return;
         }
 
         const expectedLayout = state.layoutKey;
         state.loadingTimer = setTimeout(() => {
-            if (!state.immersive || state.layoutKey !== expectedLayout || !isReaderLoading()) {
+            if ((!state.immersive && !(state.narrow && !state.dualPage))
+                || state.layoutKey !== expectedLayout
+                || !isReaderLoading()) {
+                return;
+            }
+
+            if (state.narrow && !state.dualPage) {
+                state.notice = '窄栏布局未能完成重排，请刷新页面以应用行宽。';
+                state.action = 'reload';
+                renderInterface();
                 return;
             }
 
